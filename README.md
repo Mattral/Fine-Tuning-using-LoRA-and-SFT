@@ -86,3 +86,55 @@ from transformers import AutoTokenizer
 tokenizer = AutoTokenizer.from_pretrained("facebook/opt-1.3b")
 ```
 
+Moreover, we need to define the formatting function called prepare_sample_text, which takes a row of data in Deep Lake format as input and formats it to begin with a question followed by the answer that is separated by two newlines. This formatting aids the model in learning the template and understanding that if a prompt starts with the question keyword, the most likely response would be to complete it with an answer.
+
+```
+def prepare_sample_text(example):
+    """Prepare the text from a sample of the dataset."""
+    text = f"Question: {example['question'].text()}\n\nAnswer: {example['answer'].text()}"
+
+    return text
+```
+
+Now, with all the components in place, we can initialize the dataset, which can be fed to the model for fine-tuning. We call the ConstantLengthDataset class using the combination of a tokenizer, deep lake dataset object, and formatting function. The additional arguments, such as infinite=True ensure that the iterator will restart when all data points have been used, but there are still training steps remaining. Alongside seq_length, which determines the maximum sequence length, it must be completed according to the model's configuration. In this scenario, it is possible to raise it to 2048, although we opted for a smaller value to manage memory usage better. Select a higher number if the dataset primarily comprises shorter texts.
+
+```
+from trl.trainer import ConstantLengthDataset
+
+train_dataset = ConstantLengthDataset(
+    tokenizer,
+    ds,
+    formatting_func=prepare_sample_text,
+    infinite=True,
+    seq_length=1024
+)
+
+eval_dataset = ConstantLengthDataset(
+    tokenizer,
+    ds_test,
+    formatting_func=prepare_sample_text,
+    seq_length=1024
+)
+
+# Show one sample from train set
+iterator = iter(train_dataset)
+sample = next(iterator)
+print(sample)
+```
+
+Output
+```
+{'input_ids': tensor([    2, 45641,    35,  ..., 48443,  2517,   742]), 'labels': tensor([    2, 45641,    35,  ..., 48443,  2517,   742])}
+```
+
+As evidenced by the output above, the ConstantLengthDataset class takes care of all the necessary steps to prepare our dataset.
+
+[!NOTE] If you use the iterator to print a sample from the dataset, remember to execute the following code to reset the iterator pointer. `train_dataset.start_iteration = 0`
+
+## Initialize the Model and Trainer
+As mentioned previously, we will be using the [OPT model](https://huggingface.co/facebook/opt-1.3b) with 1.3 billion parameters in this lesson, which has the facebook/opt-1.3b model id on the Hugging Face Hub.
+
+The LoRA approach is employed for fine-tuning, which involves introducing new parameters to the network while keeping the base model unchanged during the tuning process. This approach has proven to be highly efficient, enabling fine-tuning of the model by training less than 1% of the total parameters. (For more details, refer to the following post.)
+
+With the TRL library, we can seamlessly add additional parameters to the model by defining a number of configurations. The variable r represents the dimension of matrices, where lower values lead to fewer trainable parameters. lora_alpha serves as the scaling factor, while bias determines which bias parameters the model should train, with options of none, all, and lora_only. The remaining parameters are self-explanatory.
+
