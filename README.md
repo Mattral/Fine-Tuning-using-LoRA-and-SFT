@@ -46,9 +46,9 @@ We’ll see how to do SFT on an LLM using LoRA. We’ll use the dataset from the
 The [TRL library](https://github.com/huggingface/trl) has some classes for Supervised Fine-Tuning (SFT), making it accessible and straightforward. The classes permit the integration of LoRA configurations, facilitating its seamless adoption. It is worth highlighting that this process also serves as the first step for Reinforcement Learning with Human Feedback (RLHF), a topic we will explore in detail later in the course.
 
 ## Spinning Up a Virtual Machine for Finetuning on GCP Compute Engine
-Cloud GPUs availability today is very scarse as they are used a lot for several deep learning applications. Few people know that CPUs can be actually used to finetune LLMs through various optimizations and that’s what we’ll be doing in these lessons when doing SFT.
+Cloud GPUs availability today is very scarse as they are used a lot for several deep learning applications. Few people know that CPUs can be actually used to finetune LLMs through various optimizations and that’s what we’ll be doing in these repos when doing SFT.
 
-Let’s login to our Google Cloud Platform account and create a [Compute Engine](https://cloud.google.com/compute) instance (see the “Course Introduction” lesson for instructions). You can choose between different [machine types](https://cloud.google.com/compute/docs/cpu-platforms). Here, we trained the model on the latest CPU generation from 4th Generation Intel® Xeon® Scalable Processors (formerly known as Intel® Sapphire Rapids). This architecture features an integrated accelerator designed to enhance the performance of training deep learning models. Intel® Advanced Matrix Extension (AMX) empowers the training of models with BF16 precision during the training process, allowing for half-precision training on the latest Xeon® Scalable processors. Additionally, it introduces an INT8 data type for the inference process, leading to a substantial acceleration in processing speed. Reports suggest a tenfold increase in performance when utilizing PyTorch for both training and inference processes.
+Let’s login to our Google Cloud Platform account and create a [Compute Engine](https://cloud.google.com/compute) instance (see the “Course Introduction” repo for instructions). You can choose between different [machine types](https://cloud.google.com/compute/docs/cpu-platforms). Here, we trained the model on the latest CPU generation from 4th Generation Intel® Xeon® Scalable Processors (formerly known as Intel® Sapphire Rapids). This architecture features an integrated accelerator designed to enhance the performance of training deep learning models. Intel® Advanced Matrix Extension (AMX) empowers the training of models with BF16 precision during the training process, allowing for half-precision training on the latest Xeon® Scalable processors. Additionally, it introduces an INT8 data type for the inference process, leading to a substantial acceleration in processing speed. Reports suggest a tenfold increase in performance when utilizing PyTorch for both training and inference processes.
 
 Follow the instructions in the course introduction to spin up a VM with Compute Engine with high-end Intel® CPUs. Once you have your virtual machine up, you can SSH into it.
 
@@ -57,7 +57,7 @@ Incorporating CPUs for fine-tuning or inference processes presents an excellent 
 [warning] Beware of costs when you spin up virtual machines. The total cost will depend on the machine type and the up time of the machine. Always remember to monitor your costs in the billing section of GCP and to spin off your virtual machines when you don’t use them.
 
 ## Load the Dataset
-The quality of a model is directly tied to the quality of the data it is trained on! The best approach is to begin the process with a dataset. Whether it is an open-source dataset or a custom one manually, planning and considering the dataset in advance is essential. In this lesson, we will utilize the dataset released with the LIMA research. It is publicly available with a non-commercial use license.
+The quality of a model is directly tied to the quality of the data it is trained on! The best approach is to begin the process with a dataset. Whether it is an open-source dataset or a custom one manually, planning and considering the dataset in advance is essential. In this repo, we will utilize the dataset released with the LIMA research. It is publicly available with a non-commercial use license.
 
 The powerful feature of [Deep Lake](https://www.deeplake.ai/) format enables seamless streaming of the datasets. There is no need to download and load the dataset into memory. The hub provides diverse datasets, including the LIMA dataset presented in the "LIMA: Less Is More for Alignment" paper.  The Deep Lake Web UI not only aids in dataset exploration but also facilitates dataset visualization using the embeddings field, taking care of clustering the dataset and map it in 3D space. (We used Cohere embedding API to generate in this example) The enlarged image below illustrates one such cluster where data points in Portuguese language related to coding are positioned closely to each other. Note that Deep Lake Visualization Engine offers you the ability to pick the clustering algorithm.
 
@@ -79,7 +79,7 @@ Dataset(path='hub://genai360/GAIR-lima-train-set', read_only=True, tensors=['ans
 
 We can then utilize the ConstantLengthDataset class to bundle a number of smaller samples together, enhancing the efficiency of the training process. Furthermore, it also handles dataset formatting by accepting a template function and tokenizing the texts.
 
-To begin, we load the pre-trained tokenizer object for the [Open Pre-trained Transformer (OPT)](https://arxiv.org/abs/2205.01068) model using the Transformers library. We will load the model later. We are using OPT for convenience because it’s an open model with a relatively “small” amount of parameters. The same code in this lesson can be run in another model too, for example, using meta-llama/Llama-2-7b-chat-hf for [LLaMa 2](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)https://huggingface.co/meta-llama/Llama-2-7b-chat-hf.
+To begin, we load the pre-trained tokenizer object for the [Open Pre-trained Transformer (OPT)](https://arxiv.org/abs/2205.01068) model using the Transformers library. We will load the model later. We are using OPT for convenience because it’s an open model with a relatively “small” amount of parameters. The same code in this repo can be run in another model too, for example, using meta-llama/Llama-2-7b-chat-hf for [LLaMa 2](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)https://huggingface.co/meta-llama/Llama-2-7b-chat-hf.
 ```
 from transformers import AutoTokenizer
 
@@ -132,7 +132,7 @@ As evidenced by the output above, the ConstantLengthDataset class takes care of 
 [!NOTE] If you use the iterator to print a sample from the dataset, remember to execute the following code to reset the iterator pointer. `train_dataset.start_iteration = 0`
 
 ## Initialize the Model and Trainer
-As mentioned previously, we will be using the [OPT model](https://huggingface.co/facebook/opt-1.3b) with 1.3 billion parameters in this lesson, which has the facebook/opt-1.3b model id on the Hugging Face Hub.
+As mentioned previously, we will be using the [OPT model](https://huggingface.co/facebook/opt-1.3b) with 1.3 billion parameters in this repo, which has the facebook/opt-1.3b model id on the Hugging Face Hub.
 
 The LoRA approach is employed for fine-tuning, which involves introducing new parameters to the network while keeping the base model unchanged during the tuning process. This approach has proven to be highly efficient, enabling fine-tuning of the model by training less than 1% of the total parameters. (For more details, refer to the following post.)
 
@@ -150,7 +150,7 @@ lora_config = LoraConfig(
 )
 ```
 
-Next, we need to configure the TrainingArguments, which are essential for the training process. We have already covered some of the parameters in the training lesson, but note that the learning rate is higher when combined with higher weight decay, increasing parameter updates during fine-tuning.
+Next, we need to configure the TrainingArguments, which are essential for the training process. We have already covered some of the parameters in the training repo, but note that the learning rate is higher when combined with higher weight decay, increasing parameter updates during fine-tuning.
 
 Furthermore, it is highly recommended to employ the argument bf16=True in order to minimize memory usage during the model's fine-tuning process. The utilization of the Intel® Xeon® 4s CPU empowers us to apply this optimization technique. This involves converting the numbers to a 16-bit precision, effectively reducing the RAM demand during fine-tuning. We will dive into other quantization methods as we progress through the course.
 
@@ -338,7 +338,7 @@ model = model.merge_and_unload()
 model.save_pretrained("./OPT-fine_tuned-LIMA/merged")
 ```
 
-[!NOTE] Prior to progressing to the next section to observe the outcomes of the fine-tuned model, it's important to reiterate that the base model employed in this lesson is a relatively small language model with limited capabilities when compared with the state-of-the-art models we are accustomed to by now, such as ChatGPT. Remember that the insights gained from this lesson can be easily applied to train significantly larger variations of the models, leading to notably improved outcomes. (As highlighted in the lesson's introduction, modifying the key used for loading the tokenizer/model to models with any size like LLaMA2 is possible.)
+[!NOTE] Prior to progressing to the next section to observe the outcomes of the fine-tuned model, it's important to reiterate that the base model employed in this repo is a relatively small language model with limited capabilities when compared with the state-of-the-art models we are accustomed to by now, such as ChatGPT. Remember that the insights gained from this repo can be easily applied to train significantly larger variations of the models, leading to notably improved outcomes. (As highlighted in the repo's introduction, modifying the key used for loading the tokenizer/model to models with any size like LLaMA2 is possible.)
 
 ## Inference
 We can evaluate the fine-tuned model’s outputs by employing various prompts. The code below demonstrates how we can utilize Huggingface's .generate() method to interact with models effortlessly. Numerous arguments and decoding strategies exist that can enhance text generation quality; however, these are beyond the scope of this course. You can explore these techniques further in an informative [blog post](https://huggingface.co/blog/how-to-generate)https://huggingface.co/blog/how-to-generate by Huggingface.
