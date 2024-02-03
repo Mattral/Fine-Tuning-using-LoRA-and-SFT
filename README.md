@@ -55,3 +55,34 @@ Follow the instructions in the course introduction to spin up a VM with Compute 
 Incorporating CPUs for fine-tuning or inference processes presents an excellent choice, as renting alternate hardware is considerably less cost-effective. It worth mentioning that a minimum of 32GB of RAM is necessary to load the model and facilitate the experiment's training process. If there is an out-of-memory error, reduce arguments such as batch_size or seq_length.
 
 [warning] Beware of costs when you spin up virtual machines. The total cost will depend on the machine type and the up time of the machine. Always remember to monitor your costs in the billing section of GCP and to spin off your virtual machines when you don’t use them.
+
+## Load the Dataset
+The quality of a model is directly tied to the quality of the data it is trained on! The best approach is to begin the process with a dataset. Whether it is an open-source dataset or a custom one manually, planning and considering the dataset in advance is essential. In this lesson, we will utilize the dataset released with the LIMA research. It is publicly available with a non-commercial use license.
+
+The powerful feature of [Deep Lake](https://www.deeplake.ai/) format enables seamless streaming of the datasets. There is no need to download and load the dataset into memory. The hub provides diverse datasets, including the LIMA dataset presented in the "LIMA: Less Is More for Alignment" paper.  The Deep Lake Web UI not only aids in dataset exploration but also facilitates dataset visualization using the embeddings field, taking care of clustering the dataset and map it in 3D space. (We used Cohere embedding API to generate in this example) The enlarged image below illustrates one such cluster where data points in Portuguese language related to coding are positioned closely to each other. Note that Deep Lake Visualization Engine offers you the ability to pick the clustering algorithm.
+
+The code below will create a loader object for the training and test sets.
+
+```
+
+import deeplake
+
+# Connect to the training and testing datasets
+ds = deeplake.load('hub://genai360/GAIR-lima-train-set')
+ds_test = deeplake.load('hub://genai360/GAIR-lima-test-set')
+
+print(ds)
+```
+```
+Dataset(path='hub://genai360/GAIR-lima-train-set', read_only=True, tensors=['answer', 'question', 'source'])
+```
+
+We can then utilize the ConstantLengthDataset class to bundle a number of smaller samples together, enhancing the efficiency of the training process. Furthermore, it also handles dataset formatting by accepting a template function and tokenizing the texts.
+
+To begin, we load the pre-trained tokenizer object for the [Open Pre-trained Transformer (OPT)](https://arxiv.org/abs/2205.01068) model using the Transformers library. We will load the model later. We are using OPT for convenience because it’s an open model with a relatively “small” amount of parameters. The same code in this lesson can be run in another model too, for example, using meta-llama/Llama-2-7b-chat-hf for [LLaMa 2](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)https://huggingface.co/meta-llama/Llama-2-7b-chat-hf.
+```
+from transformers import AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained("facebook/opt-1.3b")
+```
+
