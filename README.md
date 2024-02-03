@@ -138,3 +138,222 @@ The LoRA approach is employed for fine-tuning, which involves introducing new pa
 
 With the TRL library, we can seamlessly add additional parameters to the model by defining a number of configurations. The variable r represents the dimension of matrices, where lower values lead to fewer trainable parameters. lora_alpha serves as the scaling factor, while bias determines which bias parameters the model should train, with options of none, all, and lora_only. The remaining parameters are self-explanatory.
 
+```
+from peft import LoraConfig
+
+lora_config = LoraConfig(
+    r=16,
+    lora_alpha=32,
+    lora_dropout=0.05,
+    bias="none",
+    task_type="CAUSAL_LM",
+)
+```
+
+Next, we need to configure the TrainingArguments, which are essential for the training process. We have already covered some of the parameters in the training lesson, but note that the learning rate is higher when combined with higher weight decay, increasing parameter updates during fine-tuning.
+
+Furthermore, it is highly recommended to employ the argument bf16=True in order to minimize memory usage during the model's fine-tuning process. The utilization of the Intel® Xeon® 4s CPU empowers us to apply this optimization technique. This involves converting the numbers to a 16-bit precision, effectively reducing the RAM demand during fine-tuning. We will dive into other quantization methods as we progress through the course.
+
+I am also using a service called[ Weights and Biases](https://wandb.ai/site), which is an excellent tool for training and fine-tuning any machine-learning model. They offer monitoring tools to record every facet of the process and various solutions for [prompt engineering](https://wandb.ai/site/traces) and [hyperparameter sweep](https://docs.wandb.ai/guides/sweeps), among other functionalities. Simply installing the package and utilizing the wandb parameter for the report_to argument is all that's required. This will handle the logging process seamlessly.
+
+```
+from transformers import TrainingArguments
+
+training_args = TrainingArguments(
+    output_dir="./OPT-fine_tuned-LIMA-CPU",
+    dataloader_drop_last=True,
+    evaluation_strategy="epoch",
+    save_strategy="epoch",
+    num_train_epochs=10,
+    logging_steps=5,
+    per_device_train_batch_size=8,
+    per_device_eval_batch_size=8,
+    learning_rate=1e-4,
+    lr_scheduler_type="cosine",
+    warmup_steps=10,
+    gradient_accumulation_steps=1,
+    bf16=True,
+    weight_decay=0.05,
+    run_name="OPT-fine_tuned-LIMA-CPU",
+    report_to="wandb",
+)
+```
+
+The final component we need is the pre-trained model. We will use the facebook/opt-1.3b key to load the model using the Transformers library. 
+
+```
+from transformers import AutoModelForCausalLM
+import torch
+
+model = AutoModelForCausalLM.from_pretrained("facebook/opt-1.3b", torch_dtype=torch.bfloat16)
+```
+
+The subsequent code block will loop through the model parameters and revert the data type of specific layers (like LayerNorm and final language modeling head) to a 32-bit format. It will improve the fine-tuning stability.
+
+```
+
+import torch.nn as nn
+
+for param in model.parameters():
+  param.requires_grad = False  # freeze the model - train adapters later
+  if param.ndim == 1:
+    # cast the small parameters (e.g. layernorm) to fp32 for stability
+    param.data = param.data.to(torch.float32)
+
+model.gradient_checkpointing_enable()  # reduce number of stored activations
+model.enable_input_require_grads()
+
+class CastOutputToFloat(nn.Sequential):
+  def forward(self, x): return super().forward(x).to(torch.float32)
+model.lm_head = CastOutputToFloat(model.lm_head)
+```
+
+Finally, we can use the SFTTrainer class to tie all the components together. It accepts the model, training arguments, training dataset, and LoRA method configurations to construct the trainer object. The packing argument indicates that we used the ConstantLengthDataset class earlier to pack samples together.
+
+```
+Finally, we can use the SFTTrainer class to tie all the components together. It accepts the model, training arguments, training dataset, and LoRA method configurations to construct the trainer object. The packing argument indicates that we used the ConstantLengthDataset class earlier to pack samples together.
+```
+
+So, why did we use LoRA? Let's observe its impact in action by implementing a simple function that calculates the number of available parameters in the model and compares it with the trainable parameters. As a reminder, the trainable parameters refer to the ones that LoRA added to the base model.
+
+```
+def print_trainable_parameters(model):
+    """
+    Prints the number of trainable parameters in the model.
+    """
+    trainable_params = 0
+    all_param = 0
+    for _, param in model.named_parameters():
+        all_param += param.numel()
+        if param.requires_grad:
+            trainable_params += param.numel()
+    print(
+        f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}"
+    )
+
+print( print_trainable_parameters(trainer.model) )
+```
+
+Output
+```
+trainable params: 3145728 || all params: 1318903808 || trainable%: 0.23851079820371554
+```
+
+As observed above, the number of trainable parameters is only 3 million. It accounts for only 0.2% of the total number of parameters that we would have had to update if we hadn't used LoRA! It significantly reduces the memory requirement. Now, it should be clear why using this approach for fine-tuning is advantageous.
+
+The trainer object is fully prepared to initiate the fine-tuning loop by calling the .train() method, as shown below.
+
+```
+
+print("Training...")
+trainer.train()
+```
+
+## Merging LoRA and OPT
+The final step involves merging the base model with the trained LoRA layers to create a standalone model. This can be achieved by loading the desired checkpoint from SFTTrainer, followed by the base model itself using the PeftModel class. Begin by loading the OPT-1.3B base model if using a fresh environment.
+
+```
+from transformers import AutoModelForCausalLM
+import torch
+
+model = AutoModelForCausalLM.from_pretrained(
+  "facebook/opt-1.3b", return_dict=True, torch_dtype=torch.bfloat16
+)
+```
+
+The PeftModel class can merge the base model with the LoRA layers from the checkpoint specified using the .from_pretrained() method. We should then put the model in the evaluation mode. Upon execution, it will print out the model's architecture to observe the presence of the LoRA layers.
+
+```
+from peft import PeftModel
+
+# Load the Lora model
+model = PeftModel.from_pretrained(model, "./OPT-fine_tuned-LIMA-CPU/<desired_checkpoint>/")
+model.eval()
+```
+
+```
+PeftModelForCausalLM(
+  (base_model): LoraModel(
+    (model): OPTForCausalLM(
+      (model): OPTModel(
+        (decoder): OPTDecoder(
+          (embed_tokens): Embedding(50272, 2048, padding_idx=1)
+          (embed_positions): OPTLearnedPositionalEmbedding(2050, 2048)
+          (final_layer_norm): LayerNorm((2048,), eps=1e-05, elementwise_affine=True)
+          (layers): ModuleList(
+            (0-23): 24 x OPTDecoderLayer(
+              (self_attn): OPTAttention(
+                (k_proj): Linear(in_features=2048, out_features=2048, bias=True)
+                (v_proj): Linear(
+                  in_features=2048, out_features=2048, bias=True
+                  (lora_dropout): ModuleDict(
+                    (default): Dropout(p=0.05, inplace=False)
+                  )
+                  (lora_A): ModuleDict(
+                    (default): Linear(in_features=2048, out_features=16, bias=False)
+                  )
+                  (lora_B): ModuleDict(
+                    (default): Linear(in_features=16, out_features=2048, bias=False)
+                  )
+                  (lora_embedding_A): ParameterDict()
+                  (lora_embedding_B): ParameterDict()
+                )
+                (q_proj): Linear(
+                  in_features=2048, out_features=2048, bias=True
+                  (lora_dropout): ModuleDict(
+                    (default): Dropout(p=0.05, inplace=False)
+                  )
+                  (lora_A): ModuleDict(
+                    (default): Linear(in_features=2048, out_features=16, bias=False)
+                  )
+                  (lora_B): ModuleDict(
+                    (default): Linear(in_features=16, out_features=2048, bias=False)
+                  )
+                  (lora_embedding_A): ParameterDict()
+                  (lora_embedding_B): ParameterDict()
+                )
+                (out_proj): Linear(in_features=2048, out_features=2048, bias=True)
+              )
+              (activation_fn): ReLU()
+              (self_attn_layer_norm): LayerNorm((2048,), eps=1e-05, elementwise_affine=True)
+              (fc1): Linear(in_features=2048, out_features=8192, bias=True)
+              (fc2): Linear(in_features=8192, out_features=2048, bias=True)
+              (final_layer_norm): LayerNorm((2048,), eps=1e-05, elementwise_affine=True)
+            )
+          )
+        )
+      )
+      (lm_head): Linear(in_features=2048, out_features=50272, bias=False)
+    )
+  )
+)
+```
+
+
+Lastly, we can use the PEFT model’s .merge_and_unload() method to combine the base model and LoRA layers as a standalone object. It is possible to save the weights using the .save_pretrained() method for later usage.
+
+```
+model = model.merge_and_unload()
+
+model.save_pretrained("./OPT-fine_tuned-LIMA/merged")
+```
+
+[!NOTE] Prior to progressing to the next section to observe the outcomes of the fine-tuned model, it's important to reiterate that the base model employed in this lesson is a relatively small language model with limited capabilities when compared with the state-of-the-art models we are accustomed to by now, such as ChatGPT. Remember that the insights gained from this lesson can be easily applied to train significantly larger variations of the models, leading to notably improved outcomes. (As highlighted in the lesson's introduction, modifying the key used for loading the tokenizer/model to models with any size like LLaMA2 is possible.)
+
+## Inference
+We can evaluate the fine-tuned model’s outputs by employing various prompts. The code below demonstrates how we can utilize Huggingface's .generate() method to interact with models effortlessly. Numerous arguments and decoding strategies exist that can enhance text generation quality; however, these are beyond the scope of this course. You can explore these techniques further in an informative [blog post](https://huggingface.co/blog/how-to-generate)https://huggingface.co/blog/how-to-generate by Huggingface.
+
+```
+inputs = tokenizer("Question: Write a recipe with chicken.\n\n Answer: ", return_tensors="pt")
+
+generation_output = model.generate(**inputs,
+                                   return_dict_in_generate=True,
+                                   output_scores=True,
+                                   max_length=256,
+                                   num_beams=1,
+                                   do_sample=True,
+                                   repetition_penalty=1.5,
+                                   length_penalty=2.)
+
+print( tokenizer.decode(generation_output['sequences'][0]) )
+```
