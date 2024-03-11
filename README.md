@@ -21,7 +21,7 @@ The following libraries offer a mix of tools that enhance the efficiency of fine
 - PEFT [Library](https://github.com/huggingface/peft): Parameter-efficient fine-tuning (PEFT) methods facilitate efficient adaptation of pre-trained language models to various downstream applications without fine-tuning all the model's parameters. By fine-tuning only a portion of the model's parameters, PEFT methods like LoRA, Prefix Tuning, and P-Tuning, including QLoRA, significantly reduce computational and storage costs.
 - [Lit-GPT](https://github.com/Lightning-AI/lit-gpt): Lit-GPT from LightningAI is an open-source resource designed to simplify the fine-tuning process, making it easier to apply LoRA's techniques without manually altering the core model architecture. Models available for this purpose include Vicuna, Pythia, and Falcon. Specific configurations can be applied to different weight matrices, and precision settings can be adjusted to manage memory consumption.
 
-In this repo we will mainly use PEFT
+In this repo we will mainly use PEFT.
 
 ## QLoRA: An Efficient Variant of LoRA
 [QLoRA](https://arxiv.org/abs/2305.14314), or Quantized Low-Rank Adaptation, is a popular variant of LoRA that makes fine-tuning large language models even more efficient. QLoRA introduces several innovations to save memory without sacrificing performance.
